@@ -1,27 +1,25 @@
-/* swcode.c -v0.32 author:rayscoo
- * data:2019-01-19 email:zhl.rays@outlook.com */
-#include <stdio.h>
+/* swcode.c -v0.41 author:rayzco
+ * data:2019-05-19 email:zhl.rays@outlook.com */
 #include <stdlib.h>
 #include <string.h>
 
 #include "swcode.h"
-
-#define FOREACH(m)          for(i = 0;i < m;++i)
 
 #define MALLOC(type,size)   ((type*)malloc(sizeof(type)*size))
 #define MEMOFREE(x)         do {free(x); x = NULL;}while(0)
 
  /* 压缩帧 - 起始标志位[1] + 数据长度[2] + 压缩数据[...] */
 
-#define START_1      (RANGE_0T)     //起始标志 以1开始
-#define START_0      (RANGE_0T - 1) //起始标志 以0开始
-#define PS_TWICE     (RANGE_0T - 2) //二次压缩标志
-#define DM           (RANGE_0T - 3) //数据最大值  
+#define START_1      (LIMIT_V)     //起始标志 以1开始
+#define START_0      (LIMIT_V - 1) //起始标志 以0开始
+#define PS_TWICE     (LIMIT_V - 2) //二次压缩标志
+#define DM           (LIMIT_V - 3) //数据最大值  
 
 #define CACHE_SIZE   (16)
 struct __cache {
 	char* fn; struct __cache* nxt;   //文件名;指向下一个缓存
 	int f, w, h; unsigned char** dt; //总帧数_帧宽_帧高_数据集
+	unsigned char m;  //压缩数据上限值
 }*SWCACHE[CACHE_SIZE] = { NULL }; //静态数据缓存
 
 /* hash - times33*/
@@ -155,78 +153,100 @@ int swcc_decode(unsigned char* psrc, unsigned char* udst)
 	return (int)(up - udst); //输出解压后的数据
 }
 
-/* 压缩文本 - SWC标记[3] + 包含帧数[2] + 每帧宽[1] + 每帧高[1] + 压缩数据最大值[1] */
+#include <stdio.h>  //提供文件操作
+
+#define FOPEN(m)       {fp = fopen(fname, (m));}
+#define FCLOSE         {fclose(fp); fp = NULL;}
+#define FRD(buf,s)     (fread(buf, sizeof(unsigned char), s, fp))
+#define FWR(buf,s)     (fwrite(buf, sizeof(unsigned char), s, fp))
+#define FSK_ST(o)      (fseek(fp, o, SEEK_SET))
+#define FSK_ED         (fseek(fp, 0, SEEK_END))
+
+/* 压缩文本 - SWC标记[3] +  数据值上限[1] + 包含帧数[2] + 每帧宽[1] + 每帧高[1] */
 int swcf_push_code(const char* fname, unsigned char* psrc, int setw, int seth)
 {
 	int csize = 0, cnt = 0;
-	unsigned char m = 0, n = 0, o = 0, p = 0;
-	FILE* fp = fopen(fname, "r+b"); //以二进制方式打开一个文本 只允许读写数据
+	unsigned char hd[9] = { '\0' }; //文件头信息临时存储数组
+	FILE* fp = NULL;
 
+	FOPEN("r+b"); //以二进制方式打开一个文本 只允许读写数据
 	if (fp == NULL) { //如果没有则创建并初始化一个SWCODE
-		fp = fopen(fname, "wb");
-		fprintf(fp, "swc%c%c%c%c%c", 0, 0, setw, seth, RANGE_0T);
-		fclose(fp);
+		FOPEN("wb");
+		hd[0] = 's', hd[1] = 'w', hd[2] = 'c', hd[3] = LIMIT_V;
+		hd[4] = 0, hd[5] = 0;        //存储帧数记录
+		hd[6] = (unsigned char)setw; //记录每一帧宽度
+		hd[7] = (unsigned char)seth; //记录每一帧高度
+		FWR(hd, 8); FCLOSE;
 		return swcf_push_code(fname, psrc, setw, seth);
 	}
 	else {
 		csize = swcc_code_size(psrc); //计算压缩帧长度
-		fseek(fp, 3, SEEK_SET);
-		fscanf(fp, "%c%c%c%c", &m, &n, &o, &p);
-		cnt = m + n * 256; //计算文件当前包含的帧数
-		if (csize > 0 && o == setw && seth == p) { //检测目标PUSH文件的有效性
-			fseek(fp, 3, SEEK_SET);
-			if (m + 1 >= 256) { //新增记数
-				fputc(0, fp);
-				fputc((unsigned char)(n + 1), fp);
+		FSK_ST(4); FRD(hd + 4, 4);
+		cnt = hd[4] + hd[5] * 256; //计算文件当前包含的帧数
+		if (csize > 0 && hd[6] == setw && seth == hd[7]) { //检测目标PUSH文件的有效性
+			if (hd[4] + 1 >= 256) { //新增记数
+				hd[4] = 0;
+				hd[5] += 1;
 			}
-			else { fputc(m + 1, fp); }
-			fseek(fp, 0, SEEK_END); //文件指针移动到文件尾
-			fwrite(psrc, sizeof(unsigned char), csize, fp);
+			else { hd[4] += 1; }
+			FSK_ST(4); FWR(hd + 4, 2);//重写文件信息头信息
+			FSK_ED; FWR(psrc, csize);
 			++cnt;
 		}
 	}
-	fclose(fp);
+	FCLOSE;
 	return cnt; //返回当前文件包含帧数
 }
 
-#define HEADER_SWCF         (hd[0] == 's' && hd[1] == 'w' && hd[2] == 'c' && hd[7] == RANGE_0T)
-#define HEADER_BASE(f,w,h)  do { f = hd[3] + hd[4] * 256; w = hd[5]; h = hd[6]; }while(0)
-
-static void move_to_memory(const char* _fn, struct __cache** _swcf)
+static void move_to_memory(const char* fname, struct __cache** _swcf)
 {
+	int fn = -1, fsz = 0, i = -1;
 	unsigned char hd[9] = { '\0' }; //文件头信息临时存储数组
-	unsigned char n = 0, n1 = 0, n2 = 0;
-	unsigned short fn = -1, fsz = 0, i = 0;
+	unsigned char nn[4] = { '\0' };
+	FILE* fp = NULL;
 
-	FILE* fp = fopen(_fn, "rb"); //以二进制方式打开 只读
+	FOPEN("rb"); //以二进制方式打开 只读
 	if (fp != NULL) {
-		fread(hd, sizeof(unsigned char), 8, fp);
-		if (HEADER_SWCF) //解析为有效的SWC文件
+		FRD(hd, 8);   //解析为有效的SWC文件
+		if (hd[0] == 's' && hd[1] == 'w' && hd[2] == 'c' && hd[3] > 5 && hd[3] < 256)
 		{
 			*_swcf = MALLOC(struct __cache, 1);
-			(*_swcf)->fn = MALLOC(char, strlen(_fn) + 1);
-			strcpy((*_swcf)->fn, _fn); //存储文件名
-
-			HEADER_BASE((*_swcf)->f, (*_swcf)->w, (*_swcf)->h); //存储帧数_宽度_高度
+			(*_swcf)->fn = MALLOC(char, strlen(fname) + 1);
+			strcpy((*_swcf)->fn, fname); //存储文件名
+			(*_swcf)->m = hd[3];         //压缩有效值上限
+			(*_swcf)->f = hd[4] + hd[5] * 256; //存储帧数
+			(*_swcf)->w = hd[6];         //数据宽度
+			(*_swcf)->h = hd[7];         //数据高度
 			(*_swcf)->dt = MALLOC(unsigned char*, (*_swcf)->f); //为每一帧分配内存空间
 			(*_swcf)->nxt = NULL;
 
-			for (n = fgetc(fp); !feof(fp); n = fgetc(fp)) {
-				if (n == START_0 || n == START_1) { //压缩数据的开始
-					n1 = fgetc(fp);
-					n2 = fgetc(fp);
-					fsz = n1 + n2 * 256; //获取压缩数据长度
+			for (; FRD(nn, 1);) {
+				if (nn[0] == (*_swcf)->m || nn[0] == (*_swcf)->m - 1) { //检测压缩数据开始标志
+					//if (i != fsz - 1) //检查上一次数据是否有效
+					//{
+					//	--(*_swcf)->f;
+					//	MEMOFREE(*((*_swcf)->dt + fn));
+					//	fn--;
+					//}
+					FRD(nn + 1, 2);
+					fsz = nn[1] + nn[2] * 256; //获取压缩数据长度
 					*((*_swcf)->dt + ++fn) = MALLOC(unsigned char, fsz); //分配一帧的内存空间
-					*(*((*_swcf)->dt + fn) + (i = 0)) = n;
-					*(*((*_swcf)->dt + fn) + ++i) = n1;  //存储一帧的头信息
-					*(*((*_swcf)->dt + fn) + ++i) = n2;
+					*(*((*_swcf)->dt + fn) + (i = 0)) = nn[0];
+					*(*((*_swcf)->dt + fn) + ++i) = nn[1];  //存储一帧的头信息
+					*(*((*_swcf)->dt + fn) + ++i) = nn[2];
 				}
 				else if (i < fsz - 1) {
-					*(*((*_swcf)->dt + fn) + ++i) = n;
+					*(*((*_swcf)->dt + fn) + ++i) = nn[0];
 				}
 			}
+			//if (i != fsz - 1) //检查最后一帧数据是否有效
+			//{
+			//	--(*_swcf)->f;
+			//	MEMOFREE(*((*_swcf)->dt + fn));
+			//}
+			//REMALLOC((*_swcf)->dt, unsigned char*, (*_swcf)->f);
 		}
-		fclose(fp);
+		FCLOSE;
 	}
 }
 
@@ -256,26 +276,27 @@ static struct __cache* swcf_to_memory(const char* _fn)
 
 int swcf_read_form(const char* fname, int* getw, int* geth)
 {
-	unsigned char hd[9] = { '\0' };
-	FILE* fp = fopen(fname, "rb");
-	int fme = -1;
+	struct __cache* fme = NULL;
 
 	*getw = *geth = 0;
-	if (fp != NULL) {  //读取文件头信息
-		fread(hd, sizeof(unsigned char), 8, fp);
-		if (HEADER_SWCF) HEADER_BASE(fme, *getw, *geth);
-		fclose(fp);
+	if ((fme = swcf_to_memory(fname)) != NULL) {
+		*getw = fme->w;
+		*geth = fme->h;
 	}
-	return fme; //返回文件总帧数
+	return (fme != NULL) ? fme->f : -1; //返回文件总帧数
 }
 
 int swcf_read_code(const char* fname, int ifme, unsigned char** pdst)
 {
-	struct __cache* fme = swcf_to_memory(fname); //尝试将静态数据搬运到内存中
+	struct __cache* fme = NULL;
 
-	*pdst = (fme != NULL) ? ((ifme >= fme->f || ifme < 0)
-		? NULL : *(fme->dt + ifme)) : NULL; //获取某一帧压缩数据地址
-	return swcc_code_size(*pdst); //获取压缩数据长度
+	if (pdst != NULL) {
+		fme = swcf_to_memory(fname); //尝试将静态数据搬运到内存中
+		*pdst = (fme != NULL) ? ((ifme >= fme->f || ifme < 0)
+			? NULL : *(fme->dt + ifme)) : NULL; //获取某一帧压缩数据地址
+		return swcc_code_size(*pdst); //获取压缩数据长度
+	}
+	return -1;
 }
 
 static void free_one_cache(struct __cache** cur, struct __cache* nt)

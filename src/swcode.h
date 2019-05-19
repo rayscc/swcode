@@ -1,12 +1,12 @@
-/* swcode.c -v0.32 author:rayscoo
- * data:2019-01-19 email:zhl.rays@outlook.com */
+/* swcode.c -v0.41 author:rayzco
+ * data:2019-05-19 email:zhl.rays@outlook.com */
 #ifndef __SWC_CODE_H
 #define __SWC_CODE_H
 
 #define __swcc __declspec(dllexport)
 //#define __swcc extern
 
-#define RANGE_0T    (255) /*压缩数据字节值大小范围控制 有效范围:5 ~ 255*/
+#define LIMIT_V     (255) /*压缩数据字节值大小范围控制 有效范围:5 ~ 255*/
 #define IGNORE_BIT  (0)   /*压缩时一字节忽略位数前 max = 7 min = 0*/
 
 /*<!-- SWITCH CODE -->*/
@@ -22,7 +22,7 @@ __swcc int swcc_encode(unsigned char* usrc, int usize, unsigned char* pdst);
 __swcc int swcc_decode(unsigned char* psrc, unsigned char* udst);
 
 
-/*<!-- SWITCH CODE FILE -->*/
+/*<!-- SWITCH CODE FILE -->*/ /* fopen fclose fseek fread fwrite */
 
 /* @概要 - 创建包含多帧的静态文本
  * @参数 - 目标文本名 | 每帧数据首地址 | 每帧图像数据的宽度 | 每帧图像数据的高度
