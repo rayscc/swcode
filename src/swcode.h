@@ -1,4 +1,4 @@
-/* swcode.c -v0.41 author:rayzco
+/* swcode.c -v0.41 author:rayscc
  * data:2019-05-19 email:zhl.rays@outlook.com */
 #ifndef __SWC_CODE_H
 #define __SWC_CODE_H
@@ -40,7 +40,7 @@ extern "C" {
 	 * @返回 - 文本包含的总帧数(int) [>0]:读取成功; [<=0]:文件读取失败 */
 	__swcc int swcf_read_form(const char* fname, int* getw, int* geth);
 
-	/* @概要 - 读取静态文本中指定帧
+	/* @概要 - 读取静态文本中指定帧(未解压)
 	 * @参数 - 静态文本地址 | 第几帧 范围(0 ~ 总帧数 - 1) | 目标帧数据访问地址
 	 * @返回 - 指定压缩帧数据长度 */
 	__swcc int swcf_read_code(const char* fname, int iframe, unsigned char** pdst);

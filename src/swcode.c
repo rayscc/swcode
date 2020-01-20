@@ -1,4 +1,4 @@
-/* swcode.c -v0.41 author:rayzco
+/* swcode.c -v0.41 author:rayscc
  * data:2019-05-19 email:zhl.rays@outlook.com */
 #include <stdlib.h>
 #include <string.h>
