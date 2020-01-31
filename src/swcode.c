@@ -1,12 +1,12 @@
-/* swcode.c -v0.41 author:rayscc
- * data:2019-05-19 email:zhl.rays@outlook.com */
+/* swcode.c -v0.42 author:rayscc
+ * data:2020-01-30 email:rayscc@foxmail.com */
 #include <stdlib.h>
 #include <string.h>
 
 #include "swcode.h"
 
-#define MALLOC(type,size)   ((type*)malloc(sizeof(type)*size))
-#define MEMOFREE(x)         do {free(x); x = NULL;}while(0)
+#define MALLOC(x,type,size)  do {while(!((x)=(type*)malloc(sizeof(type)*size)));}while(0)
+#define MEMOFREE(x)          do {free(x); x = NULL;}while(0)
 
  /* 压缩帧 - 起始标志位[1] + 数据长度[2] + 压缩数据[...] */
 
@@ -72,7 +72,7 @@ int swcc_encode(unsigned char* usrc, int usize, unsigned char* pdst)
 
 	chk = GBIT(*usrc, IGNORE_BIT);
 	*otp++ = START_0 + chk; //压缩数据首
-	*otp++ = 0, *otp++ = 0; //预留数据长度空间
+	*otp++ = 0, * otp++ = 0; //预留数据长度空间
 	//IGNORE_BIT 跳过一个字节的前几位
 	for (i = 0, j = IGNORE_BIT; i < usize;) {
 		if (chk == GBIT(*(usrc + i), j)) { ++n; }
@@ -85,12 +85,13 @@ int swcc_encode(unsigned char* usrc, int usize, unsigned char* pdst)
 	}
 	if (n > 0) MAKE_DATA(n);
 
-	cnn = (int)(otp - pdst); //压缩后的数据长度
+	cnn = (int)(otp - pdst);                  //压缩后的数据长度,也包括头信息
 	*(pdst + 1) = (unsigned char)(cnn & 255); //写入压缩数据长度信息
 	*(pdst + 2) = (unsigned char)(cnn >> 8);
 	return cnn;
 }
 
+/* 获取一帧swcode所包含的字节数 */
 static int swcc_code_size(unsigned char* psrc)
 {
 	return (psrc != NULL) ? ((*psrc == START_0 || *psrc == START_1) ?
@@ -122,7 +123,7 @@ static int swcc_code_size(unsigned char* psrc)
 int swcc_decode(unsigned char* psrc, unsigned char* udst)
 {
 	unsigned char buf = 0, chk = 0, f1 = 0, f2 = 0;
-	unsigned char* tp = psrc, *up = udst;
+	unsigned char* tp = psrc, * up = udst;
 	int rm = 0, tj = 0;
 
 	if (psrc == NULL) { return 0; }
@@ -137,8 +138,8 @@ int swcc_decode(unsigned char* psrc, unsigned char* udst)
 			for (buf = *tp++; buf != 0; buf = *tp++)
 				MAKE_BYTE(buf);
 		}break;
-		case(PS_TWICE): { //二次压缩标记
-			buf = *tp++;  //二次压缩数据组组数
+		case(PS_TWICE): {  //二次压缩标记
+			buf = *tp++;   //二次压缩数据组组数
 			f1 = *tp++, f2 = *tp++; //二次压缩数据组
 			for (; buf--;) {
 				MAKE_BYTE(f1); chk = !chk;
@@ -161,6 +162,7 @@ int swcc_decode(unsigned char* psrc, unsigned char* udst)
 #define FWR(buf,s)     (fwrite(buf, sizeof(unsigned char), s, fp))
 #define FSK_ST(o)      (fseek(fp, o, SEEK_SET))
 #define FSK_ED         (fseek(fp, 0, SEEK_END))
+#define FSIZE()        {FSK_ED; fsize = ftell(fp); FSK_ST(0);}
 
 /* 压缩文本 - SWC标记[3] +  数据值上限[1] + 包含帧数[2] + 每帧宽[1] + 每帧高[1] */
 int swcf_push_code(const char* fname, unsigned char* psrc, int setw, int seth)
@@ -198,6 +200,7 @@ int swcf_push_code(const char* fname, unsigned char* psrc, int setw, int seth)
 	return cnt; //返回当前文件包含帧数
 }
 
+/* 将包含多帧swcode格式文件写入内存中 */
 static void move_to_memory(const char* fname, struct __cache** _swcf)
 {
 	int fn = -1, fsz = 0, i = -1;
@@ -210,14 +213,14 @@ static void move_to_memory(const char* fname, struct __cache** _swcf)
 		FRD(hd, 8);   //解析为有效的SWC文件
 		if (hd[0] == 's' && hd[1] == 'w' && hd[2] == 'c' && hd[3] > 5 && hd[3] < 256)
 		{
-			*_swcf = MALLOC(struct __cache, 1);
-			(*_swcf)->fn = MALLOC(char, strlen(fname) + 1);
+			MALLOC(*_swcf, struct __cache, 1);
+			MALLOC((*_swcf)->fn, char, strlen(fname) + 1);
 			strcpy((*_swcf)->fn, fname); //存储文件名
 			(*_swcf)->m = hd[3];         //压缩有效值上限
 			(*_swcf)->f = hd[4] + hd[5] * 256; //存储帧数
 			(*_swcf)->w = hd[6];         //数据宽度
 			(*_swcf)->h = hd[7];         //数据高度
-			(*_swcf)->dt = MALLOC(unsigned char*, (*_swcf)->f); //为每一帧分配内存空间
+			MALLOC((*_swcf)->dt, unsigned char*, (*_swcf)->f);//为每一帧分配内存空间
 			(*_swcf)->nxt = NULL;
 
 			for (; FRD(nn, 1);) {
@@ -230,7 +233,7 @@ static void move_to_memory(const char* fname, struct __cache** _swcf)
 					//}
 					FRD(nn + 1, 2);
 					fsz = nn[1] + nn[2] * 256; //获取压缩数据长度
-					*((*_swcf)->dt + ++fn) = MALLOC(unsigned char, fsz); //分配一帧的内存空间
+					MALLOC(*((*_swcf)->dt + ++fn), unsigned char, fsz); //分配一帧的内存空间
 					*(*((*_swcf)->dt + fn) + (i = 0)) = nn[0];
 					*(*((*_swcf)->dt + fn) + ++i) = nn[1];  //存储一帧的头信息
 					*(*((*_swcf)->dt + fn) + ++i) = nn[2];
@@ -250,9 +253,10 @@ static void move_to_memory(const char* fname, struct __cache** _swcf)
 	}
 }
 
+/* 给新加入的swcode格式文件分配内存地址,并将其写入内存 */
 static struct __cache* swcf_to_memory(const char* _fn)
 {
-	struct __cache* p = NULL, *sp = NULL;
+	struct __cache* p = NULL, * sp = NULL;
 	unsigned int hsi = 0;
 
 	SWCF_HASH_FUNC(_fn);  //计算获取哈希值
@@ -272,6 +276,63 @@ static struct __cache* swcf_to_memory(const char* _fn)
 		move_to_memory(_fn, &sp->nxt);
 		return sp->nxt;
 	}
+}
+
+/* 释放指定swcode格式文件的内存占用,并返回新的存储地址 */
+static struct __cache** swcf_re_memory(const char* _fn)
+{
+	struct __cache* p = NULL, * sp = NULL;
+	unsigned int hsi = 0;
+
+	swcf_read_free(_fn);  //尝试清除残留数据
+	SWCF_HASH_FUNC(_fn);
+	if (SWCACHE[hsi] == NULL) { return &SWCACHE[hsi]; }
+	else {
+		sp = p = SWCACHE[hsi];
+		while (p != NULL) { sp = p, p = p->nxt; }
+		return &(sp->nxt);
+	}
+}
+
+void en_bin_as_swcf(const char* fname, int setw, int seth)
+{
+	int tcnt = setw * seth / (8 - IGNORE_BIT);
+	int rcnt = 0; //从fname中,真实读取的字节数
+	unsigned char* tarr = NULL, * earr = NULL;
+	struct __cache** r = NULL;
+	int fsize = 0, frms = -1, usz, i;
+	FILE* fp = NULL;
+
+	if (setw <= 0 || seth <= 0) return -1;
+	MALLOC(tarr, unsigned char, tcnt);
+	MALLOC(earr, unsigned char, tcnt);
+	FOPEN("r+b");  //以二进制方式打开一个文本 只允许读写数据
+	if (fp != NULL) {
+		FSIZE();
+		frms = fsize / tcnt;
+
+		r = swcf_re_memory(fname); //将BIN一次全部写入内存
+		MALLOC(*r, struct __cache, 1);
+		MALLOC((*r)->fn, char, strlen(fname) + 1);
+		strcpy((*r)->fn, fname);
+		(*r)->m = LIMIT_V;
+		(*r)->f = frms;
+		(*r)->w = setw >> 3;
+		(*r)->h = seth;
+		MALLOC((*r)->dt, unsigned char*, frms);
+		(*r)->nxt = NULL;
+
+		for (i = 0; i < frms; i++) {
+			rcnt = fread(tarr, sizeof(unsigned char), tcnt, fp);
+			if (rcnt != tcnt) { (*r)->f = frms = i + 1; break; }
+			usz = swcc_encode(tarr, rcnt, earr);
+			MALLOC(*((*r)->dt + i), unsigned char, usz);
+			memcpy(*((*r)->dt + i), earr, sizeof(unsigned char) * usz);
+		}
+		FCLOSE
+	}
+	MEMOFREE(tarr);
+	MEMOFREE(earr);
 }
 
 int swcf_read_form(const char* fname, int* getw, int* geth)
@@ -299,6 +360,7 @@ int swcf_read_code(const char* fname, int ifme, unsigned char** pdst)
 	return -1;
 }
 
+/* 根据存储结构释放指定的内存占用区域 */
 static void free_one_cache(struct __cache** cur, struct __cache* nt)
 {
 	int fme = (*cur)->f;

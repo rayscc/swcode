@@ -1,13 +1,13 @@
-/* swcode.c -v0.41 author:rayscc
- * data:2019-05-19 email:zhl.rays@outlook.com */
+/* swcode.c -v0.42 author:rayscc
+ * data:2020-01-30 email:rayscc@foxmail.com */
 #ifndef __SWC_CODE_H
 #define __SWC_CODE_H
 
 #define __swcc __declspec(dllexport)
- //#define __swcc extern
+//#define __swcc extern
 
 #define LIMIT_V     (255) /*压缩数据字节值大小范围控制 有效范围:5 ~ 255*/
-#define IGNORE_BIT  (0)   /*压缩时一字节忽略位数前 max = 7 min = 0*/
+#define IGNORE_BIT  (0)   /*压缩时一字节忽略位数前 max = 7 min = 0*//*120:1不可取*/
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,6 +34,12 @@ extern "C" {
 	 * @返回 - 压入当前帧后目标文本包含的总帧数(int) */
 	__swcc int swcf_push_code(const char* fname, unsigned char* psrc, int setw, int seth);
 
+	/* @概要 - 使读BIN文件像读SWC文件一样(一次全部调入内存)
+	 * @注意 - BIN文件读取格式通过 "IGNORE_BIT" 设置
+	 * @参数 - 目标文本名 | 设置每帧图像的宽度(像素) | 设置每帧图像的高度(像素)
+	 * @注意 - 在"swcf_read_form"之前调用,调用后不能再进行"swcf_read_free"操作 */
+	__swcc void en_bin_as_swcf(const char* fname, int setw, int seth);
+
 	/* @概要 - 读取文本数据格式
 	 * @参数 - 目标文本名 | 包含的总帧数 | 每帧数据的宽度 | 每帧数据的高度
 	 * @提示 - 获得的getw为一行字节数,其8倍为真正的图像宽
@@ -48,6 +54,7 @@ extern "C" {
 	/* @概要 - 释放指定文本缓存
 	 * @参数 - 待释放内存对应的目标文本名 */
 	__swcc void swcf_read_free(const char* fname);
+
 
 #ifdef __cplusplus
 }
